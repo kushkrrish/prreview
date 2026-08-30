@@ -17,28 +17,32 @@ class Settings(BaseSettings):
         description="Deployment environment: development/dev, staging, or production/prod.",
     )
     DATABASE_URL: str = Field(
-        description="Tiger Cloud Postgres connection URL, including SSL mode in production."
+        description="Postgres connection URL, including SSL mode in production."
     )
-    OPENAI_API_KEY: str = Field(description="OpenAI API key used for LLM and embedding calls.")
+    OPENAI_API_KEY: str = Field(
+        default="not-configured-yet",
+        description="OpenAI API key used for LLM and embedding calls.",
+    )
     OPENAI_EMBEDDING_MODEL: str = Field(
         default="text-embedding-3-large",
         description="OpenAI embedding model used for code memory indexing.",
     )
     OPENAI_EMBEDDING_DIMENSIONS: int = Field(
-        default=256,
+        default=768,
         gt=0,
-        description="Embedding dimensionality stored in pgvector.",
+        description="Embedding dimensionality stored in pgvector. Must match Vector(N) in models.py.",
     )
     GITHUB_APP_ID: int = Field(
-        gt=0,
+        default=0,
+        ge=0,
         description="Numeric GitHub App ID used to mint installation access tokens.",
     )
     GITHUB_WEBHOOK_SECRET: str = Field(
-        min_length=1,
+        default="not-configured-yet",
         description="Shared secret used to verify GitHub webhook signatures.",
     )
     GITHUB_PRIVATE_KEY_PATH: str = Field(
-        min_length=1,
+        default="not-configured-yet",
         description="Filesystem path to the GitHub App private key PEM file.",
     )
     REDIS_URL: str = Field(
@@ -70,9 +74,10 @@ class Settings(BaseSettings):
     @field_validator("DATABASE_URL")
     @classmethod
     def validate_database_url(cls, value: str) -> str:
-        """Ensure the database URL targets Postgres-compatible Tiger Cloud."""
-        if not value.startswith(("postgres://", "postgresql://")):
-            raise ValueError("DATABASE_URL must start with postgres:// or postgresql://")
+        """Ensure the database URL targets a Postgres-compatible instance."""
+        valid_prefixes = ("postgres://", "postgresql://", "postgresql+asyncpg://", "postgresql+psycopg://")
+        if not value.startswith(valid_prefixes):
+            raise ValueError(f"DATABASE_URL must start with one of {valid_prefixes}")
         return value
 
     @field_validator("LOG_LEVEL")
@@ -85,12 +90,5 @@ class Settings(BaseSettings):
             raise ValueError(f"LOG_LEVEL must be one of {sorted(allowed_levels)}")
         return normalized
 
-    @field_validator("ENVIRONMENT")
-    @classmethod
-    def validate_environment(cls, value: EnvironmentName) -> EnvironmentName:
-        """Validate supported deployment environment names."""
-        return value
-
 
 settings = Settings()
-
