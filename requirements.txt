@@ -10,5 +10,5 @@ arq>=0.25.0
 redis>=5.0.0
 langgraph>=0.0.1
 python-dotenv>=1.0.0
-
+PyGithub
 pgvector
