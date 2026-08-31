@@ -8,7 +8,7 @@ from backend.integrations.github_client import get_pr_files
 from backend.settings import settings
 
 logger = logging.getLogger(__name__)
-
+logging.basicConfig(level=settings.LOG_LEVEL)
 
 async def process_pull_request(ctx: dict, payload: dict) -> None:
     """Background task: fetch PR diffs, compute embeddings, and post AI reviews."""
