@@ -1,6 +1,6 @@
-"""Reusable Pydantic models and enums."""
+"""SQLAlchemy models and shared model enums."""
 
-from backend.models.base import BaseEntity, IDModel, TimestampedModel
+from backend.models.base import AgentEvent, Base, CodeChunk, Finding, PR
 from backend.models.enums import (
     DOCS_CATEGORIES,
     QUALITY_CATEGORIES,
@@ -13,16 +13,18 @@ from backend.models.enums import (
 )
 
 __all__ = [
+    "AgentEvent",
     "AgentTypeEnum",
-    "BaseEntity",
+    "Base",
+    "CodeChunk",
     "DOCS_CATEGORIES",
+    "Finding",
     "HITLDecision",
-    "IDModel",
+    "PR",
     "QUALITY_CATEGORIES",
     "ReviewStatus",
     "SECURITY_CATEGORIES",
     "SeverityEnum",
     "TEST_CATEGORIES",
-    "TimestampedModel",
 ]
 
