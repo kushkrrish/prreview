@@ -1,48 +1,53 @@
-"""Dummy module for testing the PR review agent's ingestion pipeline."""
+"""Dummy smoke tests for the repo's sample helper code."""
+
+import pytest
+
+from backend.dummy_test import Counter, add_numbers, divide_numbers, find_max, get_user_greeting
 
 
-def add_numbers(a: int, b: int) -> int:
-    """Returns the sum of two integers with input validation."""
-    if not isinstance(a, int) or not isinstance(b, int):
-        raise TypeError("Both inputs must be integers.")
-    return a + b
+def test_add_numbers_returns_sum() -> None:
+    assert add_numbers(2, 3) == 5
 
 
-def divide_numbers(a: int, b: int) -> float:
-    """Returns a divided by b. Raises ValueError on division by zero."""
-    if b == 0:
-        raise ValueError("Cannot divide by zero.")
-    return a / b
+def test_add_numbers_rejects_non_ints() -> None:
+    with pytest.raises(TypeError, match="Both inputs must be integers"):
+        add_numbers(2, "3")
 
 
-def get_user_greeting(name: str | None = None) -> str:
-    """Returns a personalized greeting string handling None values."""
-    if not name or not name.strip():
-        return "Hello, stranger!"
-    return f"Hello, {name.strip()}!"
+def test_divide_numbers_returns_value() -> None:
+    assert divide_numbers(10, 2) == 5.0
 
 
-class Counter:
-    """A simple counter that tracks a running total with bounds."""
-
-    def __init__(self, start: int = 0, max_limit: int = 100) -> None:
-        self.value = start
-        self.max_limit = max_limit
-
-    def increment(self, amount: int = 1) -> None:
-        """Increments value, capping at max_limit."""
-        self.value = min(self.value + amount, self.max_limit)
-
-    def decrement(self, amount: int = 1) -> None:
-        """Decrements the counter by amount."""
-        self.value -= amount
-
-    def reset(self) -> None:
-        self.value = 0
+def test_divide_numbers_rejects_zero() -> None:
+    with pytest.raises(ValueError, match="Cannot divide by zero"):
+        divide_numbers(10, 0)
 
 
-def find_max(numbers: list[int]) -> int:
-    """Returns the maximum value in a list of integers. Returns None if empty."""
-    if not numbers:
-        raise ValueError("List cannot be empty.")
-    return max(numbers)
+def test_get_user_greeting_handles_blank_and_none() -> None:
+    assert get_user_greeting() == "Hello, stranger!"
+    assert get_user_greeting("   ") == "Hello, stranger!"
+    assert get_user_greeting("  alice  ") == "Hello, alice!"
+
+
+def test_counter_increment_and_reset() -> None:
+    counter = Counter(start=2, max_limit=5)
+    counter.increment(3)
+    assert counter.value == 5
+
+    counter.increment(10)
+    assert counter.value == 5
+
+    counter.decrement(2)
+    assert counter.value == 3
+
+    counter.reset()
+    assert counter.value == 0
+
+
+def test_find_max_returns_largest_number() -> None:
+    assert find_max([1, 4, 9, 2]) == 9
+
+
+def test_find_max_rejects_empty_list() -> None:
+    with pytest.raises(ValueError, match="List cannot be empty"):
+        find_max([])
