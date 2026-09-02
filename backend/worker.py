@@ -4,14 +4,17 @@ import logging
 
 from arq.connections import RedisSettings
 
+from backend.database.session import AsyncSessionLocal
 from backend.integrations.github_client import get_pr_files
+from backend.services.ingestion_service import ingest_changed_files
 from backend.settings import settings
 
-logger = logging.getLogger(__name__)
 logging.basicConfig(level=settings.LOG_LEVEL)
+logger = logging.getLogger(__name__)
+
 
 async def process_pull_request(ctx: dict, payload: dict) -> None:
-    """Background task: fetch PR diffs, compute embeddings, and post AI reviews."""
+    """Background task: fetch PR diffs, chunk, embed, and store in code_chunks."""
     pr_number = payload.get("number")
     repo_full_name = payload.get("repository", {}).get("full_name")
     action = payload.get("action")
@@ -35,9 +38,11 @@ async def process_pull_request(ctx: dict, payload: dict) -> None:
             f.file_path, f.status, f.additions, f.deletions,
         )
 
-    # Next step: feed `changed_files` into the adaptive chunking pipeline,
-    # skip embedding for files whose file_sha already exists in code_chunks,
-    # and embed only genuinely new/changed content.
+    async with AsyncSessionLocal() as session:
+        await ingest_changed_files(session, repo_full_name, pr_number, changed_files)
+
+    # Next step: feed the now-indexed code_chunks into the LLM review step,
+    # and post results back to the PR as a GitHub comment/review.
 
 
 class WorkerSettings:

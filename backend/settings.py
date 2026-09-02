@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     DATABASE_URL: str = Field(
         description="Postgres connection URL, including SSL mode in production."
     )
+    GEMINI_API_KEY: str = Field(
+        default="not-configured-yet",
+        description="Google Gemini API key for the primary embedding provider."
+    )
     OPENAI_API_KEY: str = Field(
         default="not-configured-yet",
         description="OpenAI API key used for LLM and embedding calls.",
