@@ -35,7 +35,7 @@ class GoogleEmbeddingStrategy(EmbeddingStrategy):
         # keeping the event loop free.
         response = await asyncio.to_thread(
             self._client.models.embed_content,
-            model="text-embedding-004",
+            model="models/text-embedding-004",
             contents=text,
         )
         return response.embedding.values
