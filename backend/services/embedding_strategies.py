@@ -4,7 +4,13 @@ import asyncio
 import logging
 from abc import ABC, abstractmethod
 
-from google import genai
+try:
+    from google import genai
+    from google.genai import types
+except ImportError:  # pragma: no cover - handled at runtime when Google provider is unavailable.
+    genai = None
+    types = None
+
 from openai import AsyncOpenAI
 
 from backend.settings import settings
@@ -21,13 +27,20 @@ class EmbeddingStrategy(ABC):
 
 
 class GoogleEmbeddingStrategy(EmbeddingStrategy):
-    """Primary Strategy: Google Gemini text-embedding-004 (Native 768-dim)."""
+    """Primary strategy: Gemini Embedding 2, truncated to the DB vector size."""
 
     def __init__(self) -> None:
+        if genai is None or types is None:
+            raise RuntimeError(
+                "google-genai is not installed. Install it with 'pip install google-genai' "
+                "or configure the OpenAI fallback before using the Google embedding provider."
+            )
         # Created once, reused across every call -- not per-request.
         self._client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
     async def generate_embedding(self, text: str) -> list[float]:
+        if genai is None or types is None:
+            raise RuntimeError("Google embedding support is unavailable because google-genai is not installed.")
         # google-genai's embed_content is synchronous. Running it directly
         # inside this async function would block the entire event loop
         # while waiting on the network -- every other concurrent job would
@@ -35,24 +48,31 @@ class GoogleEmbeddingStrategy(EmbeddingStrategy):
         # keeping the event loop free.
         response = await asyncio.to_thread(
             self._client.models.embed_content,
-            model="models/text-embedding-004",
+            model="gemini-embedding-2",
             contents=text,
+            config=types.EmbedContentConfig(
+                output_dimensionality=settings.OPENAI_EMBEDDING_DIMENSIONS,
+            ),
         )
-        return response.embedding.values
+        return response.embeddings[0].values
 
 
 class OpenAIEmbeddingStrategy(EmbeddingStrategy):
-    """Fallback Strategy: OpenAI text-embedding-3-small (Matryoshka 768-dim truncation)."""
+    """Fallback strategy: configured OpenAI embedding model at the DB vector size."""
 
     def __init__(self) -> None:
-        # AsyncOpenAI is natively async -- no thread wrapping needed here.
-        self._client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+        # Create this only if failover is actually needed. Otherwise a broken
+        # optional OpenAI environment must not prevent Gemini from starting.
+        self._client: AsyncOpenAI | None = None
 
     async def generate_embedding(self, text: str) -> list[float]:
+        if self._client is None:
+            self._client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+
         response = await self._client.embeddings.create(
-            model="text-embedding-3-small",
+            model=settings.OPENAI_EMBEDDING_MODEL,
             input=text,
-            dimensions=768,  # Truncates native 1536 -> 768 dims
+            dimensions=settings.OPENAI_EMBEDDING_DIMENSIONS,
         )
         return response.data[0].embedding
 
@@ -78,7 +98,10 @@ class ResilientEmbeddingService:
 
 # Module-level singleton: both underlying clients are created exactly once,
 # on first import, and reused for the lifetime of the worker process.
+# If Google support is unavailable in the current environment, fall back to
+# the OpenAI strategy instead of crashing the whole service at import time.
+primary_strategy = GoogleEmbeddingStrategy() if genai is not None and types is not None else OpenAIEmbeddingStrategy()
 embedding_service = ResilientEmbeddingService(
-    primary=GoogleEmbeddingStrategy(),
+    primary=primary_strategy,
     fallback=OpenAIEmbeddingStrategy(),
 )

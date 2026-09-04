@@ -12,4 +12,4 @@ langgraph>=0.0.1
 python-dotenv>=1.0.0
 PyGithub
 pgvector
-google-genai
+google-genai>=1.0.0
