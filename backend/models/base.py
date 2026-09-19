@@ -53,6 +53,13 @@ class CodeChunk(Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     repo_name: Mapped[str] = mapped_column(String(255), index=True, nullable=False)  # Primary Tenant
     file_path: Mapped[str] = mapped_column(String(1000), nullable=False)
+
+    # Distinguishes a chunk taken from a PR diff vs. a full-repo baseline
+    # scan of the file's complete content. Needed because a diff chunk and
+    # a full-file chunk for the same file+sha are different content, not
+    # duplicates of each other.
+    source: Mapped[str] = mapped_column(String(20), nullable=False, default="pr_diff")
+
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     file_sha: Mapped[str] = mapped_column(String(40), nullable=False, index=True)    # Git Fingerprint
     
@@ -61,8 +68,9 @@ class CodeChunk(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     __table_args__ = (
-        # Uniqueness guarantee for exact file chunk version
-        UniqueConstraint("repo_name", "file_path", "chunk_index", "file_sha", name="uq_repo_file_chunk_sha"),
+        # Uniqueness guarantee for exact file chunk version -- now scoped
+        # by `source` too.
+        UniqueConstraint("repo_name", "file_path", "source", "chunk_index", "file_sha", name="uq_repo_file_source_chunk_sha"),
         # Speed up filtered retrieval
         Index("ix_code_chunks_repo_path", "repo_name", "file_path"),
         # HNSW Index for approximate nearest neighbor search
