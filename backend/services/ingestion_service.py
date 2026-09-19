@@ -16,9 +16,12 @@ logger = logging.getLogger(__name__)
 async def _is_already_indexed(session: AsyncSession, repo_name: str, file_path: str, file_sha: str) -> bool:
     """
     Cache check: file_sha is Git's own content hash, so if a row already
-    exists for this exact repo+path+sha, the file's content hasn't changed
-    since it was last embedded -- no need to hash anything extra or
-    recompute chunks/embeddings.
+    exists for this exact repo+path+sha+source, the file's content hasn't
+    changed since it was last embedded -- no need to hash anything extra
+    or recompute chunks/embeddings.
+
+    Filtered to source="pr_diff" so this check doesn't get confused once
+    full-repo baseline scans (source="full_file") also write to this table.
     """
     result = await session.execute(
         select(CodeChunk.id)
@@ -26,6 +29,7 @@ async def _is_already_indexed(session: AsyncSession, repo_name: str, file_path: 
             CodeChunk.repo_name == repo_name,
             CodeChunk.file_path == file_path,
             CodeChunk.file_sha == file_sha,
+            CodeChunk.source == "pr_diff",
         )
         .limit(1)
     )
@@ -69,12 +73,13 @@ async def ingest_changed_files(
             stmt = pg_insert(CodeChunk).values(
                 repo_name=repo_name,
                 file_path=f.file_path,
+                source="pr_diff",
                 chunk_index=idx,
                 file_sha=f.file_sha,
                 chunk_text=chunk_text,
                 embedding=vector,
             ).on_conflict_do_nothing(
-                constraint="uq_repo_file_chunk_sha",
+                constraint="uq_repo_file_source_chunk_sha",
             )
             await session.execute(stmt)
 

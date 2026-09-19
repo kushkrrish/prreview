@@ -1,0 +1,2 @@
+[console_scripts]
+ai-pr-review = backend.main:main

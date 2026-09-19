@@ -4,7 +4,7 @@ GitHub App authentication and PR file retrieval.
 Uses PyGithub's GithubIntegration to handle the JWT-signing and
 installation-token-exchange dance, so we don't hand-roll JWT/crypto code.
 """
-
+import base64
 import logging
 from dataclasses import dataclass
 
@@ -71,3 +71,50 @@ def get_pr_files(installation_id: int, repo_full_name: str, pr_number: int) -> l
         len(changed_files), repo_full_name, pr_number,
     )
     return changed_files
+
+
+
+@dataclass
+class RepoFile:
+    """One file from a full-repo scan, with its full content (not a diff)."""
+    file_path: str
+    content: str
+    file_sha: str
+
+
+def get_all_repo_files(installation_id: int, repo_full_name: str, max_file_size_kb: int = 300) -> list[RepoFile]:
+    """
+    Walk the ENTIRE default branch tree and return every text file's full
+    content + git blob sha. This is the "baseline scan" -- run once per
+    repo (or periodically), NOT per PR.
+
+    Skips binary files (can't decode as UTF-8) and anything over
+    max_file_size_kb, since huge files (lockfiles, generated code, assets)
+    add embedding cost without much review value.
+    """
+    client = _get_installation_client(installation_id)
+    repo = client.get_repo(repo_full_name)
+    default_branch = repo.default_branch
+
+    tree = repo.get_git_tree(default_branch, recursive=True)
+
+    files: list[RepoFile] = []
+    for entry in tree.tree:
+        if entry.type != "blob":
+            continue
+        if entry.size > max_file_size_kb * 1024:
+            logger.info("Skipping %s (%.1f KB, over size limit)", entry.path, entry.size / 1024)
+            continue
+
+        blob = repo.get_git_blob(entry.sha)
+        try:
+            content = base64.b64decode(blob.content).decode("utf-8")
+        except UnicodeDecodeError:
+            logger.info("Skipping %s (binary file, can't decode as text)", entry.path)
+            continue
+
+        files.append(RepoFile(file_path=entry.path, content=content, file_sha=entry.sha))
+
+    logger.info("Full repo scan: found %d text file(s) in %s", len(files), repo_full_name)
+    return files
+
