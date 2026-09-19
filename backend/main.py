@@ -96,6 +96,14 @@ async def github_webhook(
         if action in ["opened", "synchronize", "reopened"]:
             logger.info("Received PR event '%s' for PR #%s", action, payload.get("number"))
 
+            repository = payload.get("repository", {})
+            installation = payload.get("installation", {})
+            if not payload.get("number") or not repository.get("full_name") or not installation.get("id"):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Pull request webhook is missing number, repository.full_name, or installation.id",
+                )
+
             # Enqueue payload to Redis for ARQ background processing
             redis = await create_pool(RedisSettings.from_dsn(settings.REDIS_URL))
             await redis.enqueue_job("process_pull_request", payload)

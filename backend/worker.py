@@ -22,11 +22,12 @@ async def process_pull_request(ctx: dict, payload: dict) -> None:
 
     logger.info("Worker picked up job: PR #%s (%s) in %s", pr_number, action, repo_full_name)
 
-    if not installation_id:
+    if not repo_full_name or not installation_id or not pr_number:
         logger.error(
-            "No installation.id in webhook payload for PR #%s -- cannot authenticate to GitHub. "
-            "Check that the GitHub App is actually installed on this repo.",
+            "Incomplete pull request payload: number=%s repository=%s installation.id=%s",
             pr_number,
+            repo_full_name,
+            installation_id,
         )
         return
 

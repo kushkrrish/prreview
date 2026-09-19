@@ -41,7 +41,19 @@ def test_github_webhook_rejects_invalid_signature() -> None:
 
 
 def test_github_webhook_accepts_valid_signature_for_opened_pr(monkeypatch) -> None:
-    payload = b'{"action": "opened", "number": 1}'
+    class FakeRedis:
+        async def enqueue_job(self, *_args):
+            return "test-job"
+
+    async def fake_create_pool(_settings):
+        return FakeRedis()
+
+    monkeypatch.setattr("backend.main.create_pool", fake_create_pool)
+    payload = (
+        b'{"action": "opened", "number": 1, '
+        b'"repository": {"full_name": "owner/repo"}, '
+        b'"installation": {"id": 123}}'
+    )
     secret = "test-secret"
     monkeypatch.setattr(settings, "GITHUB_WEBHOOK_SECRET", secret)
     signature = hmac.new(
