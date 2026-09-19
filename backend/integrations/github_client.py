@@ -74,12 +74,6 @@ def get_pr_files(installation_id: int, repo_full_name: str, pr_number: int) -> l
 
 
 
-"""Addition to backend/integrations/github_client.py -- append this function."""
-
-import base64
-from dataclasses import dataclass
-
-
 @dataclass
 class RepoFile:
     """One file from a full-repo scan, with its full content (not a diff)."""

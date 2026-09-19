@@ -6,6 +6,7 @@ import hmac
 from fastapi.testclient import TestClient
 
 from backend.main import app
+from backend.settings import settings
 
 client = TestClient(app)
 
@@ -39,9 +40,10 @@ def test_github_webhook_rejects_invalid_signature() -> None:
     assert response.json()["detail"] == "Invalid HMAC Signature"
 
 
-def test_github_webhook_accepts_valid_signature_for_opened_pr() -> None:
+def test_github_webhook_accepts_valid_signature_for_opened_pr(monkeypatch) -> None:
     payload = b'{"action": "opened", "number": 1}'
     secret = "test-secret"
+    monkeypatch.setattr(settings, "GITHUB_WEBHOOK_SECRET", secret)
     signature = hmac.new(
         secret.encode("utf-8"),
         payload,

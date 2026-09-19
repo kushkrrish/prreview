@@ -47,5 +47,5 @@ ai-pr-review = "backend.main:main"
 include = ["backend*"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["backend", "tests"]
 pythonpath = ["."]
