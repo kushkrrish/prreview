@@ -68,3 +68,4 @@ class WorkerSettings:
     """ARQ Worker configuration settings."""
     functions = [process_pull_request]
     redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)
+    job_timeout = 900

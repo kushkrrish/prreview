@@ -44,6 +44,11 @@ class Settings(BaseSettings):
         default="openai/gpt-oss-20b",
         description="OpenRouter model used for structured security findings.",
     )
+    OPENROUTER_TIMEOUT_SECONDS: float = Field(
+        default=60.0,
+        gt=0,
+        description="Maximum wait for one OpenRouter review request.",
+    )
     OPENAI_API_KEY: str = Field(
         default="not-configured-yet",
         validation_alias=AliasChoices("OPENAI_API_KEY", "OPEN_API_KEY"),

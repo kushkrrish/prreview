@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import asyncio
+import json
 from typing import Protocol
 
 from openai import AsyncOpenAI
@@ -39,6 +40,16 @@ class CrossFileReview(BaseModel):
 
 class ReviewContextTooLargeError(RuntimeError):
     """Raised when no configured provider can accept the review payload."""
+
+
+def _parse_security_review(content: str | None) -> SecurityReview:
+    """Parse provider output and normalize common 1-5 confidence scores."""
+    raw = json.loads(content or "{}")
+    for finding in raw.get("findings", []):
+        confidence = finding.get("confidence")
+        if isinstance(confidence, (int, float)) and 1.0 < confidence <= 5.0:
+            finding["confidence"] = confidence / 5.0
+    return SecurityReview.model_validate(raw)
 
 
 def count_review_tokens(context: ReviewContext) -> int:
@@ -125,6 +136,8 @@ async def _review_with_openrouter(context: ReviewContext) -> SecurityReview:
     client = AsyncOpenAI(
         api_key=settings.OPENROUTER_API_KEY,
         base_url="https://openrouter.ai/api/v1",
+        timeout=settings.OPENROUTER_TIMEOUT_SECONDS,
+        max_retries=0,
         default_headers={
             "HTTP-Referer": "https://github.com/pranavjhaprof/prreview",
             "X-Title": "AI PR Review Agent",
@@ -146,7 +159,7 @@ async def _review_with_openrouter(context: ReviewContext) -> SecurityReview:
         },
     )
     content = response.choices[0].message.content
-    return SecurityReview.model_validate_json(content or "{}")
+    return _parse_security_review(content)
 
 
 async def review_security(
@@ -214,7 +227,7 @@ async def review_security(
                 },
             )
             content = response.choices[0].message.content
-            parsed = SecurityReview.model_validate_json(content or "{}")
+            parsed = _parse_security_review(content)
             return _validate_findings(context, parsed.findings)
         except Exception as exc:  # noqa: BLE001 - fallbacks keep reviews available
             logger.warning("Groq security review failed (%s); trying OpenAI", exc)

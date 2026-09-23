@@ -1,7 +1,7 @@
 import unittest
 
 from backend.agents.context_builder import PatchFile, build_review_context
-from backend.agents.security_agent import SecurityReview, count_review_tokens, review_security
+from backend.agents.security_agent import SecurityReview, _parse_security_review, count_review_tokens, review_security
 from backend.core.contracts import AgentType, Finding, Severity
 
 
@@ -72,6 +72,17 @@ class SecurityAgentTests(unittest.IsolatedAsyncioTestCase):
         token_count = count_review_tokens(self.context)
 
         self.assertGreater(token_count, len(self.context.shared_prompt) // 5)
+
+    def test_normalizes_provider_confidence_from_five_point_scale(self):
+        review = _parse_security_review(
+            '{"findings": [{"agent_type": "security", "severity": "high", '
+            '"category": "injection", "file_path": "app.py", "line_start": 3, '
+            '"line_end": 3, "summary": "Unsafe shell command", '
+            '"suggestion": "Avoid shell execution", "confidence": 3, '
+            '"rationale": "Input reaches a shell."}]}'
+        )
+
+        self.assertEqual(review.findings[0].confidence, 0.6)
 
 
 if __name__ == "__main__":
