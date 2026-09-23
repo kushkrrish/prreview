@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -22,8 +22,18 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = Field(
         description="Google Gemini API key for the primary embedding provider."
     )
+    GROQ_API_KEY: str = Field(
+        default="not-configured-yet",
+        validation_alias=AliasChoices("GROQ_API_KEY", "GROQ_API_KEy"),
+        description="Groq API key for the primary security review provider.",
+    )
+    GROQ_REVIEW_MODEL: str = Field(
+        default="openai/gpt-oss-20b",
+        description="Groq model used for structured security findings.",
+    )
     OPENAI_API_KEY: str = Field(
         default="not-configured-yet",
+        validation_alias=AliasChoices("OPENAI_API_KEY", "OPEN_API_KEY"),
         description="OpenAI API key used for LLM and embedding calls.",
     )
     OPENAI_EMBEDDING_MODEL: str = Field(
@@ -34,6 +44,14 @@ class Settings(BaseSettings):
         default=768,
         gt=0,
         description="Embedding dimensionality stored in pgvector. Must match Vector(N) in models.py.",
+    )
+    OPENAI_REVIEW_MODEL: str = Field(
+        default="gpt-4.1-mini",
+        description="OpenAI model used by specialist PR review agents.",
+    )
+    GEMINI_REVIEW_MODEL: str = Field(
+        default="gemini-3.5-flash-lite",
+        description="Gemini fallback model used when the OpenAI review request is unavailable.",
     )
     GITHUB_APP_ID: int = Field(
         default=0,

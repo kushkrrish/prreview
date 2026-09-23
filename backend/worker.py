@@ -7,6 +7,7 @@ from arq.connections import RedisSettings
 from backend.database.session import AsyncSessionLocal
 from backend.integrations.github_client import get_pr_files
 from backend.services.ingestion_service import ingest_changed_files
+from backend.services.review_service import run_security_review
 from backend.settings import settings
 
 logging.basicConfig(level=settings.LOG_LEVEL)
@@ -41,9 +42,18 @@ async def process_pull_request(ctx: dict, payload: dict) -> None:
 
     async with AsyncSessionLocal() as session:
         await ingest_changed_files(session, repo_full_name, pr_number, changed_files)
-
-    # Next step: feed the now-indexed code_chunks into the LLM review step,
-    # and post results back to the PR as a GitHub comment/review.
+        pull_request = payload.get("pull_request", {})
+        finding_count = await run_security_review(
+            session,
+            repo_name=repo_full_name,
+            pr_number=pr_number,
+            title=pull_request.get("title", "Untitled pull request"),
+            description=pull_request.get("body"),
+            head_sha=pull_request.get("head", {}).get("sha", "unknown"),
+            author=pull_request.get("user", {}).get("login", "unknown"),
+            changed_files=changed_files,
+        )
+    logger.info("Security review completed for %s PR #%s: %d finding(s)", repo_full_name, pr_number, finding_count)
 
 
 class WorkerSettings:
