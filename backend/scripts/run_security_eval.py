@@ -6,22 +6,29 @@ vulnerable command; it only supplies a unified diff to the reviewer.
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 
 from backend.agents.context_builder import PatchFile, build_review_context
 from backend.agents.security_agent import review_security
 
 
 async def main() -> None:
-    print("Starting Gemini security evaluation...", flush=True)
+    fixture_path = Path(__file__).parents[2] / "tests" / "fixtures" / "vulnerable_command_runner.py"
+    fixture_lines = fixture_path.read_text(encoding="utf-8").splitlines()
+    fixture_diff = "@@ -0,0 +1,%d @@\n%s" % (
+        len(fixture_lines),
+        "\n".join(f"+{line}" for line in fixture_lines),
+    )
+    print(f"Starting security evaluation for {fixture_path.name}...", flush=True)
     context = build_review_context(
         repo="eval/security-fixtures",
         pr_number=1,
         head_sha="synthetic",
-        title="Add command execution endpoint",
-        description="Synthetic security-agent evaluation only.",
+        title="Add command runner",
+        description="Evaluate a newly added command runner before merging.",
         files=[PatchFile(
-            "app/command_runner.py",
-            "@@ -0,0 +1,6 @@\n+import subprocess\n+\n+def run(command: str) -> None:\n+    subprocess.run(command, shell=True, check=True)\n+\n+",
+            "tests/fixtures/vulnerable_command_runner.py",
+            fixture_diff,
             "added",
         )],
         nonce="security-eval",

@@ -120,6 +120,35 @@ async def _review_with_gemini(context: ReviewContext) -> SecurityReview:
     raise RuntimeError("Gemini security review exhausted its retry attempts")
 
 
+async def _review_with_openrouter(context: ReviewContext) -> SecurityReview:
+    """Use OpenRouter's OpenAI-compatible endpoint for larger review payloads."""
+    client = AsyncOpenAI(
+        api_key=settings.OPENROUTER_API_KEY,
+        base_url="https://openrouter.ai/api/v1",
+        default_headers={
+            "HTTP-Referer": "https://github.com/pranavjhaprof/prreview",
+            "X-Title": "AI PR Review Agent",
+        },
+    )
+    response = await client.chat.completions.create(
+        model=settings.OPENROUTER_REVIEW_MODEL,
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": context.shared_prompt},
+        ],
+        response_format={
+            "type": "json_schema",
+            "json_schema": {
+                "name": "security_review",
+                "strict": False,
+                "schema": SecurityReview.model_json_schema(),
+            },
+        },
+    )
+    content = response.choices[0].message.content
+    return SecurityReview.model_validate_json(content or "{}")
+
+
 async def review_security(
     context: ReviewContext,
     *,
@@ -138,6 +167,22 @@ async def review_security(
             f"Review payload is approximately {estimated_tokens} tokens, above the "
             f"configured maximum of {settings.GEMINI_MAX_INPUT_TOKENS}"
         )
+    if (
+        client is None
+        and estimated_tokens > settings.GROQ_MAX_INPUT_TOKENS
+        and settings.OPENROUTER_API_KEY != "not-configured-yet"
+    ):
+        try:
+            logger.info(
+                "Using OpenRouter model %s for large security-review context (~%d tokens)",
+                settings.OPENROUTER_REVIEW_MODEL,
+                estimated_tokens,
+            )
+            parsed = await _review_with_openrouter(context)
+            return _validate_findings(context, parsed.findings)
+        except Exception as exc:  # noqa: BLE001 - continue to larger-context fallback
+            logger.warning("OpenRouter security review failed (%s); trying Gemini", exc)
+
     if client is None and estimated_tokens > settings.GROQ_MAX_INPUT_TOKENS:
         logger.info(
             "Using Gemini for large security-review context (~%d tokens; Groq cap %d)",

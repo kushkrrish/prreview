@@ -36,6 +36,14 @@ class Settings(BaseSettings):
         gt=0,
         description="Largest estimated prompt sent to Groq before Gemini is selected instead.",
     )
+    OPENROUTER_API_KEY: str = Field(
+        default="not-configured-yet",
+        description="OpenRouter API key used for larger-context security reviews.",
+    )
+    OPENROUTER_REVIEW_MODEL: str = Field(
+        default="openai/gpt-oss-20b",
+        description="OpenRouter model used for structured security findings.",
+    )
     OPENAI_API_KEY: str = Field(
         default="not-configured-yet",
         validation_alias=AliasChoices("OPENAI_API_KEY", "OPEN_API_KEY"),
