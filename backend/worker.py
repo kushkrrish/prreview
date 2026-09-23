@@ -41,7 +41,15 @@ async def process_pull_request(ctx: dict, payload: dict) -> None:
         )
 
     async with AsyncSessionLocal() as session:
-        await ingest_changed_files(session, repo_full_name, pr_number, changed_files)
+        try:
+            await ingest_changed_files(session, repo_full_name, pr_number, changed_files)
+        except Exception:  # noqa: BLE001 - review can proceed without retrieval context
+            logger.exception(
+                "Embedding/indexing failed for %s PR #%s; continuing with diff-only security review",
+                repo_full_name,
+                pr_number,
+            )
+            await session.rollback()
         pull_request = payload.get("pull_request", {})
         finding_count = await run_security_review(
             session,
