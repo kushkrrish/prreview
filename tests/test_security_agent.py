@@ -1,7 +1,7 @@
 import unittest
 
 from backend.agents.context_builder import PatchFile, build_review_context
-from backend.agents.security_agent import SecurityReview, review_security
+from backend.agents.security_agent import SecurityReview, count_review_tokens, review_security
 from backend.core.contracts import AgentType, Finding, Severity
 
 
@@ -67,6 +67,11 @@ class SecurityAgentTests(unittest.IsolatedAsyncioTestCase):
         result = await review_security(self.context, client=client)
 
         self.assertEqual(result, [])
+
+    def test_counts_complete_review_payload(self):
+        token_count = count_review_tokens(self.context)
+
+        self.assertGreater(token_count, len(self.context.shared_prompt) // 5)
 
 
 if __name__ == "__main__":

@@ -31,6 +31,11 @@ class Settings(BaseSettings):
         default="openai/gpt-oss-20b",
         description="Groq model used for structured security findings.",
     )
+    GROQ_MAX_INPUT_TOKENS: int = Field(
+        default=7000,
+        gt=0,
+        description="Largest estimated prompt sent to Groq before Gemini is selected instead.",
+    )
     OPENAI_API_KEY: str = Field(
         default="not-configured-yet",
         validation_alias=AliasChoices("OPENAI_API_KEY", "OPEN_API_KEY"),
@@ -50,8 +55,13 @@ class Settings(BaseSettings):
         description="OpenAI model used by specialist PR review agents.",
     )
     GEMINI_REVIEW_MODEL: str = Field(
-        default="gemini-3.5-flash-lite",
+        default="gemini-3.6-flash",
         description="Gemini fallback model used when the OpenAI review request is unavailable.",
+    )
+    GEMINI_MAX_INPUT_TOKENS: int = Field(
+        default=100_000,
+        gt=0,
+        description="Maximum estimated input tokens allowed for the larger-context fallback.",
     )
     GITHUB_APP_ID: int = Field(
         default=0,

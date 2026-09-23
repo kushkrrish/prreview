@@ -16,6 +16,7 @@ Design notes (the reasoning is in the chat reply; short version here):
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
 from itertools import zip_longest
 from typing import Iterable, Protocol, Sequence
@@ -23,8 +24,9 @@ from typing import Iterable, Protocol, Sequence
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.agents.context_builder import RetrievedChunk
+from backend.agents.context_builder import PatchFile, RetrievedChunk
 from backend.models import CodeChunk
+from backend.services.embedding_strategies import embedding_service
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +45,50 @@ class RetrievalConfig:
     ef_search: int = 100  # HNSW candidate list size; see _nearest()
     query_source: str = "pr_diff"
     baseline_source: str = "full_file"
+
+
+@dataclass(frozen=True)
+class EmbeddedReference:
+    file_path: str
+    content: str
+    embedding: Sequence[float]
+
+
+def rank_similar_references(
+    query_embedding: Sequence[float],
+    references: Sequence[EmbeddedReference],
+    *,
+    top_k: int = 4,
+    max_chars: int = 2_000,
+) -> list[RetrievedChunk]:
+    """Rank references by cosine similarity within a strict content budget."""
+    query_norm = math.sqrt(sum(value * value for value in query_embedding))
+    if query_norm == 0:
+        return []
+
+    ranked: list[tuple[float, EmbeddedReference]] = []
+    for reference in references:
+        ref_norm = math.sqrt(sum(value * value for value in reference.embedding))
+        if ref_norm == 0 or len(reference.embedding) != len(query_embedding):
+            continue
+        similarity = sum(
+            left * right for left, right in zip(query_embedding, reference.embedding)
+        ) / (query_norm * ref_norm)
+        ranked.append((similarity, reference))
+
+    selected: list[RetrievedChunk] = []
+    used_chars = 0
+    for similarity, reference in sorted(ranked, key=lambda item: item[0], reverse=True):
+        if len(selected) >= top_k:
+            break
+        content = reference.content[: max_chars - used_chars]
+        if not content:
+            break
+        selected.append(RetrievedChunk(reference.file_path, content, "full_file", similarity))
+        used_chars += len(content)
+        if used_chars >= max_chars:
+            break
+    return selected
 
 
 # --- pure helpers (unit-tested without a database) ---------------------------
@@ -142,4 +188,25 @@ async def retrieve_context(
             return merged
     except Exception:  # noqa: BLE001
         logger.exception("Retrieval failed for %s; continuing without reference context", repo_name)
+        return []
+
+
+async def retrieve_context_for_patch(
+    session: AsyncSession,
+    *,
+    repo_name: str,
+    patch_file: PatchFile,
+    config: RetrievalConfig | None = None,
+) -> list[RetrievedChunk]:
+    """Embed one review chunk and retrieve only its closest baseline code."""
+    if not patch_file.patch:
+        return []
+    cfg = config or RetrievalConfig(neighbors_per_query=4, max_results=4)
+    try:
+        query_vector = await embedding_service.get_embedding(patch_file.patch)
+        async with session.begin_nested():
+            await session.execute(text(f"SET LOCAL hnsw.ef_search = {int(cfg.ef_search)}"))
+            return await _nearest(session, repo_name, query_vector, cfg)
+    except Exception:  # noqa: BLE001 - retrieval must not block a review
+        logger.exception("Chunk retrieval failed for %s", patch_file.path)
         return []
