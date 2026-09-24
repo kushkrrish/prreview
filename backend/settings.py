@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -22,8 +22,36 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = Field(
         description="Google Gemini API key for the primary embedding provider."
     )
+    GROQ_API_KEY: str = Field(
+        default="not-configured-yet",
+        validation_alias=AliasChoices("GROQ_API_KEY", "GROQ_API_KEy"),
+        description="Legacy Groq API key retained for compatibility.",
+    )
+    GROQ_REVIEW_MODEL: str = Field(
+        default="openai/gpt-oss-20b",
+        description="Groq model used for structured security findings.",
+    )
+    GROQ_MAX_INPUT_TOKENS: int = Field(
+        default=7000,
+        gt=0,
+        description="Largest estimated prompt sent to Groq before Gemini is selected instead.",
+    )
+    OPENROUTER_API_KEY: str = Field(
+        default="not-configured-yet",
+        description="OpenRouter API key used for security reviews.",
+    )
+    OPENROUTER_REVIEW_MODEL: str = Field(
+        default="openai/gpt-oss-20b",
+        description="OpenRouter model used for structured security findings.",
+    )
+    OPENROUTER_TIMEOUT_SECONDS: float = Field(
+        default=60.0,
+        gt=0,
+        description="Maximum wait for one OpenRouter review request.",
+    )
     OPENAI_API_KEY: str = Field(
         default="not-configured-yet",
+        validation_alias=AliasChoices("OPENAI_API_KEY", "OPEN_API_KEY"),
         description="OpenAI API key used for LLM and embedding calls.",
     )
     OPENAI_EMBEDDING_MODEL: str = Field(
@@ -34,6 +62,19 @@ class Settings(BaseSettings):
         default=768,
         gt=0,
         description="Embedding dimensionality stored in pgvector. Must match Vector(N) in models.py.",
+    )
+    OPENAI_REVIEW_MODEL: str = Field(
+        default="gpt-4.1-mini",
+        description="OpenAI model used by specialist PR review agents.",
+    )
+    GEMINI_REVIEW_MODEL: str = Field(
+        default="gemini-3.6-flash",
+        description="Gemini fallback model used when the OpenAI review request is unavailable.",
+    )
+    GEMINI_MAX_INPUT_TOKENS: int = Field(
+        default=100_000,
+        gt=0,
+        description="Maximum estimated input tokens allowed for the larger-context fallback.",
     )
     GITHUB_APP_ID: int = Field(
         default=0,
@@ -49,7 +90,7 @@ class Settings(BaseSettings):
         description="Filesystem path to the GitHub App private key PEM file.",
     )
     REDIS_URL: str = Field(
-        default="redis://localhost:6379",
+        default="redis://127.0.0.1:6379/0",
         description="Redis connection URL for ARQ background jobs.",
     )
     LOG_LEVEL: str = Field(

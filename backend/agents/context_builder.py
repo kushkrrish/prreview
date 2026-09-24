@@ -35,6 +35,32 @@ class PatchFile:
     status: str = "modified"  # added | modified | removed | renamed
 
 
+def split_diff_by_file(files: Sequence[PatchFile], *, min_chars: int = 500, max_chars: int = 5_000) -> list[PatchFile]:
+    """Split changed files into review-sized patches and drop trivial chunks."""
+    chunks: list[PatchFile] = []
+    for patch_file in files:
+        if not patch_file.patch:
+            continue
+        if len(patch_file.patch) <= max_chars:
+            candidates = [patch_file.patch]
+        else:
+            candidates = []
+            current: list[str] = []
+            for line in patch_file.patch.splitlines():
+                if line.startswith("@@") and current:
+                    candidates.append("\n".join(current))
+                    current = []
+                current.append(line)
+            if current:
+                candidates.append("\n".join(current))
+
+        for index, patch in enumerate(candidates):
+            if len(patch) < min_chars:
+                continue
+            chunks.append(PatchFile(path=patch_file.path, patch=patch, status=patch_file.status))
+    return chunks
+
+
 @dataclass
 class RetrievedChunk:
     file_path: str

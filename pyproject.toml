@@ -34,6 +34,7 @@ dependencies = [
     "asyncpg>=0.29.0",
     "openai>=1.0.0",
     "google-genai>=1.0.0",
+    "tiktoken>=0.7.0",
     "arq>=0.25.0",
     "redis>=5.0.0",
     "langgraph>=0.0.1",

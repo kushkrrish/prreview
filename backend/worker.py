@@ -1,12 +1,14 @@
 """ARQ background worker process."""
 
+import asyncio
 import logging
 
 from arq.connections import RedisSettings
 
 from backend.database.session import AsyncSessionLocal
-from backend.integrations.github_client import get_pr_files
+from backend.integrations.github_client import get_pr_files, publish_pr_review_comments
 from backend.services.ingestion_service import ingest_changed_files
+from backend.services.review_service import run_security_review
 from backend.settings import settings
 
 logging.basicConfig(level=settings.LOG_LEVEL)
@@ -40,13 +42,45 @@ async def process_pull_request(ctx: dict, payload: dict) -> None:
         )
 
     async with AsyncSessionLocal() as session:
-        await ingest_changed_files(session, repo_full_name, pr_number, changed_files)
-
-    # Next step: feed the now-indexed code_chunks into the LLM review step,
-    # and post results back to the PR as a GitHub comment/review.
+        try:
+            await ingest_changed_files(session, repo_full_name, pr_number, changed_files)
+        except Exception:  # noqa: BLE001 - review can proceed without retrieval context
+            logger.exception(
+                "Embedding/indexing failed for %s PR #%s; continuing with diff-only security review",
+                repo_full_name,
+                pr_number,
+            )
+            await session.rollback()
+        pull_request = payload.get("pull_request", {})
+        findings = await run_security_review(
+            session,
+            repo_name=repo_full_name,
+            pr_number=pr_number,
+            title=pull_request.get("title", "Untitled pull request"),
+            description=pull_request.get("body"),
+            head_sha=pull_request.get("head", {}).get("sha", "unknown"),
+            author=pull_request.get("user", {}).get("login", "unknown"),
+            changed_files=changed_files,
+        )
+    published_count = await asyncio.to_thread(
+        publish_pr_review_comments,
+        installation_id,
+        repo_full_name,
+        pr_number,
+        pull_request.get("head", {}).get("sha", "unknown"),
+        findings,
+    )
+    logger.info(
+        "Security review completed for %s PR #%s: %d finding(s), %d published",
+        repo_full_name,
+        pr_number,
+        len(findings),
+        published_count,
+    )
 
 
 class WorkerSettings:
     """ARQ Worker configuration settings."""
     functions = [process_pull_request]
     redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)
+    job_timeout = 900

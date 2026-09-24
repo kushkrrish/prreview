@@ -4,9 +4,11 @@ GitHub App authentication and PR file retrieval.
 Uses PyGithub's GithubIntegration to handle the JWT-signing and
 installation-token-exchange dance, so we don't hand-roll JWT/crypto code.
 """
+from urllib3.util import Retry
 import base64
 import logging
 from dataclasses import dataclass
+from typing import Iterable
 
 from github import Auth, Github, GithubIntegration
 
@@ -39,7 +41,20 @@ def _get_installation_client(installation_id: int) -> Github:
     integration = GithubIntegration(auth=auth)
     installation_auth = integration.get_access_token(installation_id)
 
-    return Github(auth=Auth.Token(installation_auth.token))
+    # Define a retry strategy for temporary network blips / WSL latency drops
+    retry_strategy = Retry(
+        total=3,
+        backoff_factor=1,  # Waits 1s, 2s, 4s between retries
+        status_forcelist=[500, 502, 503, 504],
+        raise_on_status=False
+    )
+
+    # Pass the timeout and retry strategy into the Github client
+    return Github(
+        auth=Auth.Token(installation_auth.token),
+        timeout=30,            # Increased from the 15s default
+        retry=retry_strategy   # Automatically handle transient connection hiccups
+    )
 
 
 def get_pr_files(installation_id: int, repo_full_name: str, pr_number: int) -> list[ChangedFile]:
@@ -71,6 +86,80 @@ def get_pr_files(installation_id: int, repo_full_name: str, pr_number: int) -> l
         len(changed_files), repo_full_name, pr_number,
     )
     return changed_files
+
+
+def _compact_text(text: str, limit: int) -> str:
+    """Keep model prose readable and bounded in a GitHub review comment."""
+    normalized = " ".join(text.strip().split())
+    return normalized if len(normalized) <= limit else f"{normalized[:limit - 1].rstrip()}…"
+
+
+def format_security_comment(finding) -> str:
+    """Render one concise, developer-oriented inline PR comment."""
+    severity = getattr(finding.severity, "value", finding.severity)
+    category = _compact_text(finding.category.replace("_", " "), 40)
+    summary = _compact_text(finding.summary, 120)
+    rationale = _compact_text(finding.rationale, 320)
+    suggestion = _compact_text(finding.suggestion, 400)
+    return (
+        f"**{str(severity).upper()} | {category}** - {summary}\n\n"
+        f"{rationale}\n\n"
+        f"**Suggested fix:** {suggestion}"
+    )
+
+
+def publish_pr_review_comments(
+    installation_id: int,
+    repo_full_name: str,
+    pr_number: int,
+    head_sha: str,
+    findings: Iterable,
+) -> int:
+    """Publish validated findings as inline comments on the PR's reviewed commit.
+
+    A failed individual comment is logged and does not prevent other useful
+    findings from reaching the developer. Findings are already restricted to
+    lines visible in the diff by the security agent.
+    """
+    client = _get_installation_client(installation_id)
+    pull_request = client.get_repo(repo_full_name).get_pull(pr_number)
+    existing = {
+        (comment.commit_id, comment.path, comment.line, comment.body)
+        for comment in pull_request.get_review_comments()
+    }
+    published = 0
+    for finding in findings:
+        body = format_security_comment(finding)
+        key = (head_sha, finding.file_path, finding.line_end, body)
+        if key in existing:
+            logger.info(
+                "Skipping already-published security finding for %s PR #%d at %s:%d",
+                repo_full_name,
+                pr_number,
+                finding.file_path,
+                finding.line_end,
+            )
+            continue
+        try:
+            pull_request.create_review_comment(
+                body=body,
+                commit=head_sha,
+                path=finding.file_path,
+                line=finding.line_end,
+                side="RIGHT",
+            )
+            published += 1
+            existing.add(key)
+        except Exception:  # noqa: BLE001 - one rejected line must not hide others
+            logger.exception(
+                "Could not publish security finding for %s PR #%d at %s:%d",
+                repo_full_name,
+                pr_number,
+                finding.file_path,
+                finding.line_end,
+            )
+    logger.info("Published %d/%d inline security comment(s) for %s PR #%d", published, len(findings), repo_full_name, pr_number)
+    return published
 
 
 
