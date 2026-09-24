@@ -90,7 +90,7 @@ class Settings(BaseSettings):
         description="Filesystem path to the GitHub App private key PEM file.",
     )
     REDIS_URL: str = Field(
-        default="redis://localhost:6379",
+        default="redis://127.0.0.1:6379/0",
         description="Redis connection URL for ARQ background jobs.",
     )
     LOG_LEVEL: str = Field(

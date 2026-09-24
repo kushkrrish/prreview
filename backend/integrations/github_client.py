@@ -4,6 +4,7 @@ GitHub App authentication and PR file retrieval.
 Uses PyGithub's GithubIntegration to handle the JWT-signing and
 installation-token-exchange dance, so we don't hand-roll JWT/crypto code.
 """
+from urllib3.util import Retry
 import base64
 import logging
 from dataclasses import dataclass
@@ -40,7 +41,20 @@ def _get_installation_client(installation_id: int) -> Github:
     integration = GithubIntegration(auth=auth)
     installation_auth = integration.get_access_token(installation_id)
 
-    return Github(auth=Auth.Token(installation_auth.token))
+    # Define a retry strategy for temporary network blips / WSL latency drops
+    retry_strategy = Retry(
+        total=3,
+        backoff_factor=1,  # Waits 1s, 2s, 4s between retries
+        status_forcelist=[500, 502, 503, 504],
+        raise_on_status=False
+    )
+
+    # Pass the timeout and retry strategy into the Github client
+    return Github(
+        auth=Auth.Token(installation_auth.token),
+        timeout=30,            # Increased from the 15s default
+        retry=retry_strategy   # Automatically handle transient connection hiccups
+    )
 
 
 def get_pr_files(installation_id: int, repo_full_name: str, pr_number: int) -> list[ChangedFile]:
