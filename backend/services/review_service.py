@@ -20,7 +20,7 @@ async def run_security_review(
     head_sha: str,
     author: str,
     changed_files: list,
-) -> int:
+) -> list:
     """Review one PR and atomically replace its previous security findings."""
     chunks = split_diff_by_file([PatchFile(f.file_path, f.patch, f.status) for f in changed_files])
     findings = []
@@ -89,4 +89,4 @@ async def run_security_review(
         },
     ))
     await session.commit()
-    return len(findings)
+    return findings

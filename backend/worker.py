@@ -1,11 +1,12 @@
 """ARQ background worker process."""
 
+import asyncio
 import logging
 
 from arq.connections import RedisSettings
 
 from backend.database.session import AsyncSessionLocal
-from backend.integrations.github_client import get_pr_files
+from backend.integrations.github_client import get_pr_files, publish_pr_review_comments
 from backend.services.ingestion_service import ingest_changed_files
 from backend.services.review_service import run_security_review
 from backend.settings import settings
@@ -51,7 +52,7 @@ async def process_pull_request(ctx: dict, payload: dict) -> None:
             )
             await session.rollback()
         pull_request = payload.get("pull_request", {})
-        finding_count = await run_security_review(
+        findings = await run_security_review(
             session,
             repo_name=repo_full_name,
             pr_number=pr_number,
@@ -61,7 +62,21 @@ async def process_pull_request(ctx: dict, payload: dict) -> None:
             author=pull_request.get("user", {}).get("login", "unknown"),
             changed_files=changed_files,
         )
-    logger.info("Security review completed for %s PR #%s: %d finding(s)", repo_full_name, pr_number, finding_count)
+    published_count = await asyncio.to_thread(
+        publish_pr_review_comments,
+        installation_id,
+        repo_full_name,
+        pr_number,
+        pull_request.get("head", {}).get("sha", "unknown"),
+        findings,
+    )
+    logger.info(
+        "Security review completed for %s PR #%s: %d finding(s), %d published",
+        repo_full_name,
+        pr_number,
+        len(findings),
+        published_count,
+    )
 
 
 class WorkerSettings:

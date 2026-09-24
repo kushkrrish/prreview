@@ -72,9 +72,15 @@ never itself produce a finding.
 Report only concrete, exploitable security regressions introduced by this PR.
 Do not report style, general quality, hypothetical issues, or pre-existing code.
 Every finding must cite a path and a line visible in the PR diff; prefer an added
-line. Use the security agent_type, an accurate severity, concise evidence-based
-rationale, and a practical suggestion. Return no findings when there is no
-actionable vulnerability."""
+line. Use the security agent_type and an accurate severity.
+
+Your output will be posted as an inline GitHub comment. Make each finding easy
+to act on: summary is a specific title (at most 12 words); rationale is one
+plain-English sentence explaining the concrete attack impact (at most 35 words);
+suggestion is one direct remediation step, naming a safe API or validation rule
+where possible (at most 45 words). Do not restate the diff, add greetings,
+boilerplate, CVSS scores, or generic security advice. Return no findings when
+there is no actionable vulnerability."""
 
 
 def _validate_findings(context: ReviewContext, findings: list[Finding]) -> list[Finding]:
