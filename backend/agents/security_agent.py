@@ -45,11 +45,17 @@ class ReviewContextTooLargeError(RuntimeError):
 def _parse_security_review(content: str | None) -> SecurityReview:
     """Parse provider output and normalize common 1-5 confidence scores."""
     raw = json.loads(content or "{}")
+    normalized_findings = []
     for finding in raw.get("findings", []):
         confidence = finding.get("confidence")
         if isinstance(confidence, (int, float)) and 1.0 < confidence <= 5.0:
-            finding["confidence"] = confidence / 5.0
-    return SecurityReview.model_validate(raw)
+            confidence /= 5.0
+            finding["confidence"] = confidence
+        if not isinstance(confidence, (int, float)) or not 0.0 <= confidence <= 1.0:
+            logger.warning("Ignoring security finding with invalid confidence: %r", confidence)
+            continue
+        normalized_findings.append(finding)
+    return SecurityReview.model_validate({"findings": normalized_findings})
 
 
 def count_review_tokens(context: ReviewContext) -> int:
@@ -121,7 +127,7 @@ async def _review_with_gemini(context: ReviewContext) -> SecurityReview:
             response = await asyncio.to_thread(
                 lambda: gemini_client.models.generate_content(**request),
             )
-            return SecurityReview.model_validate_json(response.text)
+            return _parse_security_review(response.text)
         except Exception as exc:  # noqa: BLE001 - provider SDK error type varies
             is_temporary = isinstance(exc, genai_errors.ServerError) or getattr(exc, "status_code", None) == 503
             if not is_temporary or attempt == 2:
@@ -174,51 +180,33 @@ async def review_security(
     client: AsyncOpenAI | None = None,
     model: str | None = None,
 ) -> list[Finding]:
-    """Review with Groq first, then OpenAI and Gemini if a provider is unavailable."""
+    """Review with OpenRouter first, then OpenAI and Gemini if unavailable."""
     if not context.files:
         return []
 
-    # A rough but conservative estimate. It avoids Groq's account-level TPM
-    # rejection without requiring a provider-specific tokenizer at runtime.
     estimated_tokens = count_review_tokens(context)
     if estimated_tokens > settings.GEMINI_MAX_INPUT_TOKENS:
         raise ReviewContextTooLargeError(
             f"Review payload is approximately {estimated_tokens} tokens, above the "
             f"configured maximum of {settings.GEMINI_MAX_INPUT_TOKENS}"
         )
-    if (
-        client is None
-        and estimated_tokens > settings.GROQ_MAX_INPUT_TOKENS
-        and settings.OPENROUTER_API_KEY != "not-configured-yet"
-    ):
+    if client is None and settings.OPENROUTER_API_KEY != "not-configured-yet":
         try:
             logger.info(
-                "Using OpenRouter model %s for large security-review context (~%d tokens)",
+                "Using OpenRouter model %s for security-review context (~%d tokens)",
                 settings.OPENROUTER_REVIEW_MODEL,
                 estimated_tokens,
             )
             parsed = await _review_with_openrouter(context)
             return _validate_findings(context, parsed.findings)
         except Exception as exc:  # noqa: BLE001 - continue to larger-context fallback
-            logger.warning("OpenRouter security review failed (%s); trying Gemini", exc)
-
-    if client is None and estimated_tokens > settings.GROQ_MAX_INPUT_TOKENS:
-        logger.info(
-            "Using Gemini for large security-review context (~%d tokens; Groq cap %d)",
-            estimated_tokens,
-            settings.GROQ_MAX_INPUT_TOKENS,
-        )
-        parsed = await _review_with_gemini(context)
-        return _validate_findings(context, parsed.findings)
+            logger.warning("OpenRouter security review failed (%s); trying OpenAI", exc)
 
     if client is None:
         try:
-            groq_client = AsyncOpenAI(
-                api_key=settings.GROQ_API_KEY,
-                base_url="https://api.groq.com/openai/v1",
-            )
-            response = await groq_client.chat.completions.create(
-                model=settings.GROQ_REVIEW_MODEL,
+            openai_client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+            response = await openai_client.chat.completions.create(
+                model=settings.OPENAI_REVIEW_MODEL,
                 messages=[
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {"role": "user", "content": context.shared_prompt},
@@ -236,7 +224,9 @@ async def review_security(
             parsed = _parse_security_review(content)
             return _validate_findings(context, parsed.findings)
         except Exception as exc:  # noqa: BLE001 - fallbacks keep reviews available
-            logger.warning("Groq security review failed (%s); trying OpenAI", exc)
+            logger.warning("OpenAI security review failed (%s); trying Gemini", exc)
+            parsed = await _review_with_gemini(context)
+            return _validate_findings(context, parsed.findings)
 
     client = client or AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
     try:
@@ -259,8 +249,8 @@ async def review_security(
 
 
 async def review_cross_file_findings(findings: list[Finding]) -> CrossFileReview:
-    """Ask Groq whether separate findings combine into one attack path."""
-    if len(findings) < 2 or settings.GROQ_API_KEY == "not-configured-yet":
+    """Ask OpenRouter whether separate findings combine into one attack path."""
+    if len(findings) < 2 or settings.OPENROUTER_API_KEY == "not-configured-yet":
         return CrossFileReview()
     payload = "\n".join(
         f"- {finding.file_path}:{finding.line_start}-{finding.line_end} "
@@ -268,12 +258,18 @@ async def review_cross_file_findings(findings: list[Finding]) -> CrossFileReview
         for finding in findings
     )
     client = AsyncOpenAI(
-        api_key=settings.GROQ_API_KEY,
-        base_url="https://api.groq.com/openai/v1",
+        api_key=settings.OPENROUTER_API_KEY,
+        base_url="https://openrouter.ai/api/v1",
+        timeout=settings.OPENROUTER_TIMEOUT_SECONDS,
+        max_retries=0,
+        default_headers={
+            "HTTP-Referer": "https://github.com/pranavjhaprof/prreview",
+            "X-Title": "AI PR Review Agent",
+        },
     )
     try:
         response = await client.chat.completions.create(
-            model=settings.GROQ_REVIEW_MODEL,
+            model=settings.OPENROUTER_REVIEW_MODEL,
             messages=[
                 {
                     "role": "system",

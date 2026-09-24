@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     GROQ_API_KEY: str = Field(
         default="not-configured-yet",
         validation_alias=AliasChoices("GROQ_API_KEY", "GROQ_API_KEy"),
-        description="Groq API key for the primary security review provider.",
+        description="Legacy Groq API key retained for compatibility.",
     )
     GROQ_REVIEW_MODEL: str = Field(
         default="openai/gpt-oss-20b",
@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     )
     OPENROUTER_API_KEY: str = Field(
         default="not-configured-yet",
-        description="OpenRouter API key used for larger-context security reviews.",
+        description="OpenRouter API key used for security reviews.",
     )
     OPENROUTER_REVIEW_MODEL: str = Field(
         default="openai/gpt-oss-20b",

@@ -20,7 +20,9 @@ source venv/bin/activate  # or venv\Scripts\activate on Windows
 pip install -r requirements.txt
 
 cp .env.example .env
-# Edit .env with Tiger Cloud, OpenAI, and GitHub credentials.
+# Edit .env with Tiger Cloud, OpenRouter, Gemini, and GitHub credentials.
+
+python -m alembic upgrade head
 
 python -m backend.main
 ```

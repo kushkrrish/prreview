@@ -84,6 +84,17 @@ class SecurityAgentTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(review.findings[0].confidence, 0.6)
 
+    def test_discards_findings_with_invalid_confidence(self):
+        review = _parse_security_review(
+            '{"findings": [{"agent_type": "security", "severity": "high", '
+            '"category": "injection", "file_path": "app.py", "line_start": 3, '
+            '"line_end": 3, "summary": "Unsafe shell command", '
+            '"suggestion": "Avoid shell execution", "confidence": 11469, '
+            '"rationale": "Input reaches a shell."}]}'
+        )
+
+        self.assertEqual(review.findings, [])
+
 
 if __name__ == "__main__":
     unittest.main()
